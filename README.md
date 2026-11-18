@@ -10,6 +10,49 @@ If you've heard of Overseer, Ombi, or Jellyseer; this is in the similar vein, <i
 
 ![Search Page](/media/search_page.png)
 
+> [!NOTE]
+> **This is a fork** of [markbeep/AudioBookRequest](https://github.com/markbeep/AudioBookRequest) (2.0.1) that adds library awareness, series tracking and a redesigned interface. Everything below the screenshots is the upstream documentation and still applies.
+
+## What this fork adds
+
+![Home page](/docs/screenshots/home.png)
+
+- **Knows your Audiobookshelf library.** The whole library is synced into ABR every 30 minutes (or on demand from *Settings → Audiobookshelf*). Books you own get an **In library** badge everywhere and are left out of recommendations. Matching uses the ASIN first, then the title and author, so it also works when your library and your Audible region use different ASINs.
+- **Series rows on the home page.** *Next in your series* shows the next released book in every series you own; *Missing from your series* shows the gaps. Box sets ("Book 1, 2") count as both books.
+- **Series pages.** Every book in order with your progress, **Request N missing** in one click, and **Follow series**: new releases are requested automatically (checked every 6 hours). Following never back-fills older books.
+- **Book pages.** Cover backdrop, series position, narrators, length, release date, summary, request button, *More in this series* and *Listeners also enjoyed*.
+- **Redesigned interface.** Larger cards with status badges, scrolling rows with arrows, a search-first home page, the blue dark theme by default (the moon/sun toggle switches to light) and a layout that works on phones.
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/series.png" alt="Series page with progress, Follow series and Request missing" /></td>
+    <td><img src="docs/screenshots/book.png" alt="Book page with series shelf" /></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/mobile-home.png" alt="Home page on a phone" width="300" /></td>
+  </tr>
+</table>
+
+### Running this fork
+
+The image is published to GitHub Container Registry on every push. Tags are `sha-<commit>` (pin one of these), plus the branch name:
+
+```yaml
+services:
+  audiobookrequest:
+    image: ghcr.io/ar3sau/audiobookrequest:sha-<commit>
+    volumes:
+      - ./config:/config
+    ports:
+      - 8000:8000
+```
+
+It uses the same `/config` folder and settings as upstream; the new tables are created automatically on start. To get the library features, fill in *Settings → Audiobookshelf* and turn on *Use ABS to mark existing books as downloaded*.
+
+The layout takes inspiration from [Seerr](https://github.com/seerr-team/seerr); no Seerr code is used.
+
+---
+
 ## Table of Contents
 
 - [Motivation](#motivation)

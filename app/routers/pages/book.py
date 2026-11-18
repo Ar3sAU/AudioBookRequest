@@ -55,10 +55,12 @@ async def read_book(
     # More in this series
     series_name: str | None = None
     series_position: str | None = None
+    series_asin: str | None = None
     series_books: list[AudiobookRecommendation] = []
     if details.series:
         first = details.series[0]
         series_name, series_position = first.title, first.sequence
+        series_asin = first.asin
         resolved = await series_by_asin(client_session, first.asin, first.title, region)
         if resolved and resolved.entries:
             stored = {
@@ -96,6 +98,7 @@ async def read_book(
         details=details,
         series_name=series_name,
         series_position=series_position,
+        series_asin=series_asin,
         series_books=series_books,
         similar=similar,
         region=region,

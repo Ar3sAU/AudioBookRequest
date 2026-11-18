@@ -1,0 +1,90 @@
+{#def
+    user: DetailedUser,
+    view: SeriesView,
+    region: audible_region_type,
+    auto_start_download: bool,
+#}
+
+{% set series = view.series %}
+{% set total = view.released | length %}
+{% set owned = view.owned_count %}
+{% set missing = view.missing | length %}
+{% set percent = (owned * 100 // total) if total else 0 %}
+
+<BaseLayout title={{ series.name ~ " - AudioBookRequest" }} user={{ user }}>
+<div class="w-full flex flex-col items-center pb-12 gap-8 overflow-x-hidden">
+    <!-- Header -->
+    <section class="relative w-full overflow-hidden">
+        {% if view.cover %}
+            <div class="absolute inset-0" aria-hidden="true">
+                <img src="{{ view.cover }}"
+                     alt=""
+                     class="w-full h-full object-cover scale-125 blur-3xl opacity-60" />
+                <div class="absolute inset-0 bg-gradient-to-b from-base-100/30 via-base-100/70 to-base-100">
+                </div>
+            </div>
+        {% endif %}
+        <div class="relative mx-auto w-full max-w-7xl px-4 sm:px-8 pt-8 sm:pt-12 pb-2 flex flex-col gap-5">
+            <div>
+                <p class="text-sm font-semibold uppercase tracking-widest text-primary">
+                    Series
+                </p>
+                <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+                    {{ series.name }}
+                </h1>
+                {% if view.authors %}
+                    <p class="mt-1 text-base">
+                        <span class="opacity-60">By</span>
+                        {% for author in view.authors %}
+                            <a href="{{ base_url }}/search?q={{ author | urlencode }}"
+                               class="font-semibold link link-hover">{{ author }}</a>
+                            {{- "," if not loop.last else "" -}}
+                        {% endfor %}
+                    </p>
+                {% endif %}
+            </div>
+            <!-- Progress -->
+            <div class="max-w-xl">
+                <div class="flex justify-between text-sm mb-1">
+                    <span><span class="font-bold">{{ owned }}</span> of {{ total }} released books in your library</span>
+                    {% if view.upcoming %}<span class="opacity-60">{{ view.upcoming | length }} coming</span>{% endif %}
+                </div>
+                <progress class="progress progress-success w-full h-3"
+                          value="{{ [owned, total] | min }}"
+                          max="{{ total if total else 1 }}"
+                          aria-label="{{ percent }} percent of the series in your library">
+                </progress>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+                <Series.FollowButton user={{ user }} series_asin={{ series.asin }} followed={{ view.followed is not none }} />
+                {% if missing %}
+                    <button class="btn btn-lg rounded-full gap-2 btn-primary shadow-lg shadow-primary/30"
+                            hx-post="{{ base_url }}/series/{{ series.asin }}/hx-request-missing"
+                            hx-confirm="Request {{ missing }} {{ 'book' if missing == 1 else 'books' }} from {{ series.name }}?"
+                            hx-disabled-elt="this">
+                        <icons.Download />
+                        Request {{ missing }} missing
+                    </button>
+                {% elif total %}
+                    <span class="text-sm opacity-70">Nothing missing: every released book is in your library or requested.</span>
+                {% endif %}
+            </div>
+            <p class="text-xs opacity-60 max-w-xl">
+                Following requests new books in this series automatically when they're released. It doesn't request older books; use "Request missing" for those.
+            </p>
+        </div>
+    </section>
+
+    <!-- Books -->
+    <section class="w-full max-w-7xl px-4 sm:px-8">
+        <h2 class="text-xl sm:text-2xl font-bold tracking-tight mb-4">
+            Books in order
+        </h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-6">
+            {% for item in view.items %}
+                <BookCard book_with_requests={{ view.with_requests(item, user.username) }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} caption={{ "Book " ~ item.entry.sequence }} upcoming={{ None if item.released else "Coming " ~ item.book.release_date.strftime("%-d %b %Y") }} />
+            {% endfor %}
+        </div>
+    </section>
+</div>
+</BaseLayout>

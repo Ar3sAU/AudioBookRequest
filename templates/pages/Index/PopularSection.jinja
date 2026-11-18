@@ -46,7 +46,7 @@
         {% for reason in reasons[:20] %}
             <div class="flex-none w-36 sm:w-44 snap-start"
                  title="{{ reason.reason or '' }}">
-                <BookCard book_with_requests={{ reason.book }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} caption={{ reason.reason if show_reasons else None }} />
+                <BookCard book_with_requests={{ reason.book }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} caption={{ reason.reason if show_reasons else None }} caption_url={{ base_url ~ reason.link if show_reasons and reason.link else None }} />
             </div>
         {% endfor %}
     {% elif empty %}

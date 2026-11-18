@@ -6,6 +6,7 @@
     auto_start_download: bool,
     series_name: str | None = None,
     series_position: str | None = None,
+    series_asin: str | None = None,
     series_books: list = [],
     similar: list = [],
 #}
@@ -39,7 +40,7 @@
             </div>
             <div class="flex flex-col gap-3 min-w-0 text-center md:text-left">
                 {% if series_name %}
-                    <a href="{{ base_url }}/search?q={{ series_name | urlencode }}"
+                    <a href="{{ base_url }}{{ '/series/' ~ series_asin if series_asin else '/search?q=' ~ series_name | urlencode }}"
                        class="self-center md:self-start badge badge-lg badge-primary badge-outline gap-1 hover:bg-primary/10">
                         {% if series_position %}Book {{ series_position }} ·{% endif %}
                         {{ series_name }}
@@ -109,7 +110,7 @@
 
     {% if series_books %}
         <div class="w-full flex justify-center px-4 sm:px-8">
-            <Shelf title={{ "More in " ~ series_name }} description={{ series_books | length ~ " books in this series" }}>
+            <Shelf title={{ "More in " ~ series_name }} description={{ series_books | length ~ " books in this series" }} href={{ "/series/" ~ series_asin if series_asin else None }} link_text="Whole series">
             {% for item in series_books %}
                 <div class="flex-none w-36 sm:w-44 snap-start"
                      {% if item.reason == "This book" %}data-current{% endif %}>

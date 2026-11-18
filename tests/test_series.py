@@ -93,9 +93,11 @@ async def test_resolve_series_drops_placeholders_and_dupes(
     async def find(*_: object) -> tuple[str, str]:
         return "SERIES1", "The Primal Hunter"
 
-    async def children(*_: object) -> list[series_mod._Relationship]:  # pyright: ignore[reportPrivateUsage]
+    async def children(
+        *_: object,
+    ) -> tuple[str | None, list[series_mod._Relationship]]:  # pyright: ignore[reportPrivateUsage]
         rel = series_mod._Relationship  # pyright: ignore[reportPrivateUsage]
-        return [
+        return "The Primal Hunter", [
             rel(
                 asin="B1",
                 relationship_to_product="child",

@@ -1,0 +1,32 @@
+{#def
+    user: DetailedUser,
+    series_asin: str,
+    followed: bool,
+#}
+
+{# Swapped in place by /series/{asin}/hx-follow (POST follows, DELETE unfollows). #}
+<div class="series-follow">
+    {% if followed %}
+        <button class="btn btn-lg rounded-full gap-2 btn-success btn-soft"
+                hx-delete="{{ base_url }}/series/{{ series_asin }}/hx-follow"
+                hx-target="closest .series-follow"
+                hx-swap="outerHTML"
+                hx-disabled-elt="this"
+                title="New books are requested when they're released. Click to stop."
+                aria-label="Following: click to stop following">
+            <icons.Checkmark />
+            Following
+        </button>
+    {% else %}
+        <button class="btn btn-lg rounded-full gap-2 btn-outline"
+                hx-post="{{ base_url }}/series/{{ series_asin }}/hx-follow"
+                hx-target="closest .series-follow"
+                hx-swap="outerHTML"
+                hx-disabled-elt="this"
+                title="Request new books in this series automatically when they're released"
+                aria-label="Follow series">
+            <icons.Plus />
+            Follow series
+        </button>
+    {% endif %}
+</div>

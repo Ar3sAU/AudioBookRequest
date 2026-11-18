@@ -168,6 +168,7 @@ class _Relationship(BaseModel):
 
 class _SeriesProduct(BaseModel):
     class _Inner(BaseModel):
+        title: str | None = None
         relationships: list[_Relationship] = []
 
     product: _Inner
@@ -248,14 +249,15 @@ async def _find_series_asin(
 
 async def _series_children(
     client_session: ClientSession, region: audible_region_type, series_asin: str
-) -> list[_Relationship]:
-    params = {"response_groups": "relationships"}
+) -> tuple[str | None, list[_Relationship]]:
+    """The series' own title and its books."""
+    params = {"response_groups": "relationships,product_desc"}
     async with client_session.get(
         f"{_api(region)}/{series_asin}", params=params
     ) as resp:
         resp.raise_for_status()
         data = _SeriesProduct.model_validate(await resp.json())
-    return [
+    return data.product.title, [
         r
         for r in data.product.relationships
         if r.relationship_to_product == "child" and r.relationship_type == "series"
@@ -284,10 +286,14 @@ async def _load_series(
     client_session: ClientSession,
     region: audible_region_type,
     series_asin: str,
-    title: str,
-    key: str,
+    title: str | None,
+    key: str | None,
 ) -> ResolvedSeries:
-    children = await _series_children(client_session, region, series_asin)
+    fetched_title, children = await _series_children(
+        client_session, region, series_asin
+    )
+    title = title or fetched_title or "Series"
+    key = key or series_key(title)
     products = await _fetch_products(client_session, region, [c.asin for c in children])
     best: dict[float, tuple[_Relationship, _ProductWithSeries]] = {}
     for rel in children:
@@ -316,18 +322,27 @@ async def _load_series(
 async def series_by_asin(
     client_session: ClientSession,
     series_asin: str,
-    title: str,
+    title: str | None = None,
     region: audible_region_type | None = None,
+    max_age: float = SERIES_TTL,
 ) -> ResolvedSeries | None:
-    """A series by its Audible ASIN (used on a book's page). Cached like resolve_series."""
+    """A series by its Audible ASIN (book and series pages). Cached like resolve_series.
+
+    Without a title, the series' own Audible title is used. `max_age` lets the
+    follow check see new releases sooner than the page cache would.
+    """
     region = region or get_region_from_settings()
     cache_key = (region, f"asin:{series_asin}")
     cached = _series_cache.get(cache_key)
-    if cached and time.time() - cached.timestamp < SERIES_TTL:
+    if cached and time.time() - cached.timestamp < max_age:
         return cached.value
     try:
         result = await _load_series(
-            client_session, region, series_asin, title, series_key(title)
+            client_session,
+            region,
+            series_asin,
+            title,
+            series_key(title) if title else None,
         )
     except Exception as e:
         logger.warning("Audible: failed to load series", series=title, error=str(e))
@@ -379,6 +394,7 @@ class SeriesSuggestion:
     series_name: str
     sequence: str
     reason: str
+    series_asin: str | None = None
 
 
 @dataclass
@@ -443,6 +459,7 @@ async def _build_series_rows(
                             series_name=res.name,
                             sequence=entry.sequence,
                             reason=label,
+                            series_asin=res.asin,
                         )
                     )
                     next_added = True
@@ -453,6 +470,7 @@ async def _build_series_rows(
                         series_name=res.name,
                         sequence=entry.sequence,
                         reason=label,
+                        series_asin=res.asin,
                     )
                 )
     rows.next_up = rows.next_up[:limit]

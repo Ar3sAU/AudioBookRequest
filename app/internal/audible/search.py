@@ -232,10 +232,24 @@ def upsert_books(session: Session, books: list[Audiobook]) -> list[Audiobook]:
     for book in books:
         cached = existing.get(book.asin)
         if cached is None:
-            if index.owns(book):
-                book.fulfilled = True
-            session.add(book)
-            stored.append(book)
+            # Insert a copy: `book` may live in an in-memory cache (search,
+            # series). Adding it would bind it to this session, and once the
+            # session closes the next request reading it fails with
+            # DetachedInstanceError.
+            fresh = Audiobook(
+                asin=book.asin,
+                title=book.title,
+                subtitle=book.subtitle,
+                authors=list(book.authors),
+                narrators=list(book.narrators),
+                cover_image=book.cover_image,
+                release_date=book.release_date,
+                runtime_length_min=book.runtime_length_min,
+                fulfilled=book.fulfilled or index.owns(book),
+            )
+            session.add(fresh)
+            existing[book.asin] = fresh  # a repeated ASIN updates, not re-inserts
+            stored.append(fresh)
             continue
         cached.title = book.title
         cached.subtitle = book.subtitle

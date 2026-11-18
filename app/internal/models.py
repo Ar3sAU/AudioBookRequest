@@ -319,3 +319,21 @@ class LibraryItem(BaseSQLModel, table=True):
     duration_min: int = 0
     added_at: datetime | None = None
     synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class FollowedSeries(BaseSQLModel, table=True):
+    """A user follows an Audible series: new releases are requested automatically.
+
+    Only books released on or after `created_at` are auto-requested, so
+    following a long series never back-fills it; "Request all missing" on the
+    series page does that explicitly.
+    """
+
+    user_username: str = Field(
+        primary_key=True, foreign_key="user.username", ondelete="CASCADE"
+    )
+    series_asin: str = Field(primary_key=True)
+    name: str
+    region: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_checked_at: datetime | None = None

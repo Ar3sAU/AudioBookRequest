@@ -17,6 +17,7 @@ from app.util.log import logger
 class AudiobookRecommendation(BaseModel):
     book: AudiobookWithRequests
     reason: str | None = None
+    link: str | None = None  # where the reason points, e.g. a series page
 
 
 class UserSimsRecommendation(BaseModel):

@@ -287,6 +287,7 @@ def _series_to_recommendations(
                     book=book, requests=book.requests, username=username
                 ),
                 reason=s.reason,
+                link=f"/series/{s.series_asin}" if s.series_asin else None,
             )
         )
     return result

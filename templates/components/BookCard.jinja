@@ -4,11 +4,13 @@
     region: audible_region_type,
     user: DetailedUser,
     caption: str | None = None,
+    caption_url: str | None = None,
+    upcoming: str | None = None, # e.g. "Coming 19 Aug 2026": badge, no request button
 #}
 
 {% set book = book_with_requests.book %}
 {% set already_requested = book_with_requests.already_requested %}
-{% set done = book.fulfilled or already_requested %}
+{% set done = book.fulfilled or already_requested or upcoming %}
 {% set detail_url = base_url ~ "/book/" ~ book.asin %}
 {% set will_download = auto_start_download and user.can_download() %}
 
@@ -52,6 +54,8 @@
             <span class="absolute top-2 left-2 badge badge-sm badge-success font-semibold shadow">In library</span>
         {% elif already_requested %}
             <span class="absolute top-2 left-2 badge badge-sm badge-info font-semibold shadow">Requested</span>
+        {% elif upcoming %}
+            <span class="absolute top-2 left-2 badge badge-sm badge-warning font-semibold shadow">{{ upcoming }}</span>
         {% endif %}
         <!-- Request -->
         {% if not done %}
@@ -73,7 +77,11 @@
     </div>
     <!-- Book info -->
     <div class="pt-2 min-w-0">
-        {% if caption %}
+        {% if caption and caption_url %}
+            <a class="block text-[11px] font-semibold uppercase tracking-wide text-primary line-clamp-1 hover:underline"
+               title="{{ caption }}"
+               href="{{ caption_url }}">{{ caption }}</a>
+        {% elif caption %}
             <div class="text-[11px] font-semibold uppercase tracking-wide text-primary line-clamp-1"
                  title="{{ caption }}">
                 {{ caption }}

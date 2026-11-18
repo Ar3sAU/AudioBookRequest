@@ -33,8 +33,8 @@ def upgrade() -> None:
         sa.Column("narrators", sa.JSON(), nullable=True),
         sa.Column("series", sa.JSON(), nullable=True),
         sa.Column("duration_min", sa.Integer(), nullable=False),
-        sa.Column("added_at", sa.DateTime(), nullable=True),
-        sa.Column("synced_at", sa.DateTime(), nullable=False),
+        sa.Column("added_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("synced_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("abs_id"),
     )
     with op.batch_alter_table("libraryitem", schema=None) as batch_op:

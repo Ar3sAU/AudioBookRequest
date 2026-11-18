@@ -1,0 +1,135 @@
+{#def
+    user: DetailedUser,
+    book_with_requests: AudiobookWithRequests,
+    details: BookDetails,
+    region: audible_region_type,
+    auto_start_download: bool,
+    series_name: str | None = None,
+    series_position: str | None = None,
+    series_books: list = [],
+    similar: list = [],
+#}
+
+{% set book = book_with_requests.book %}
+
+<BaseLayout title={{ book.title ~ " - AudioBookRequest" }} user={{ user }}>
+<div class="w-full flex flex-col items-center pb-12 gap-10 overflow-x-hidden">
+    <!-- Header with blurred cover backdrop -->
+    <section class="relative w-full overflow-hidden">
+        {% if book.cover_image %}
+            <div class="absolute inset-0" aria-hidden="true">
+                <img src="{{ book.cover_image }}"
+                     alt=""
+                     class="w-full h-full object-cover scale-125 blur-3xl opacity-70" />
+                <div class="absolute inset-0 bg-gradient-to-b from-base-100/30 via-base-100/60 to-base-100">
+                </div>
+            </div>
+        {% endif %}
+        <div class="relative mx-auto w-full max-w-7xl px-4 sm:px-8 pt-8 sm:pt-12 pb-4 flex flex-col md:flex-row gap-8 items-center md:items-end">
+            <div class="shrink-0 w-56 sm:w-64 aspect-square rounded-2xl overflow-hidden shadow-2xl ring-1 ring-base-content/10 bg-base-300">
+                {% if book.cover_image %}
+                    <img src="{{ book.cover_image }}"
+                         alt="Cover of {{ book.title }}"
+                         class="w-full h-full object-cover" />
+                {% else %}
+                    <div class="w-full h-full flex items-center justify-center opacity-40">
+                        <icons.PhotoOff />
+                    </div>
+                {% endif %}
+            </div>
+            <div class="flex flex-col gap-3 min-w-0 text-center md:text-left">
+                {% if series_name %}
+                    <a href="{{ base_url }}/search?q={{ series_name | urlencode }}"
+                       class="self-center md:self-start badge badge-lg badge-primary badge-outline gap-1 hover:bg-primary/10">
+                        {% if series_position %}Book {{ series_position }} ·{% endif %}
+                        {{ series_name }}
+                    </a>
+                {% endif %}
+                <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+                    {{ book.title }}
+                </h1>
+                {% if book.subtitle %}
+                    <p class="text-lg sm:text-xl opacity-70">
+                        {{ book.subtitle }}
+                    </p>
+                {% endif %}
+                <p class="text-base">
+                    <span class="opacity-60">By</span>
+                    {% for author in book.authors %}
+                        <a href="{{ base_url }}/search?q={{ author | urlencode }}"
+                           class="font-semibold link link-hover">{{ author }}</a>
+                        {{- "," if not loop.last else "" -}}
+                    {% endfor %}
+                    {% if book.narrators %}
+                        <span class="opacity-60 ml-1">· Narrated by</span>
+                        {% for narrator in book.narrators[:3] %}
+                            <a href="{{ base_url }}/search?q={{ narrator | urlencode }}"
+                               class="font-semibold link link-hover">{{ narrator }}</a>
+                            {{- "," if not loop.last else "" -}}
+                        {% endfor %}
+                    {% endif %}
+                </p>
+                <div class="flex flex-wrap gap-2 justify-center md:justify-start text-sm">
+                    {% if book.runtime_length_hrs %}
+                        <span class="badge badge-lg bg-base-200/80 border-base-content/10">{{ book.runtime_length_hrs }} hrs</span>
+                    {% endif %}
+                    <span class="badge badge-lg bg-base-200/80 border-base-content/10">{{ book.release_date.strftime("%-d %b %Y") }}</span>
+                    {% if details.format_type %}
+                        <span class="badge badge-lg bg-base-200/80 border-base-content/10 capitalize">{{ details.format_type }}</span>
+                    {% endif %}
+                    {% if details.language %}
+                        <span class="badge badge-lg bg-base-200/80 border-base-content/10 capitalize">{{ details.language }}</span>
+                    {% endif %}
+                    {% if details.publisher %}
+                        <span class="badge badge-lg bg-base-200/80 border-base-content/10">{{ details.publisher }}</span>
+                    {% endif %}
+                </div>
+                <div class="pt-2 flex flex-wrap items-center gap-4 justify-center md:justify-start">
+                    <Book.RequestButton book_with_requests={{ book_with_requests }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} />
+                    <a href="https://audible{{ audible_regions[region] }}/pd/{{ book.asin }}?ipRedirectOverride=true"
+                       target="_blank"
+                       rel="noopener"
+                       class="link link-hover text-sm opacity-70">View on Audible ↗</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% if details.summary_html %}
+        <section class="w-full max-w-7xl px-4 sm:px-8">
+            <h2 class="text-xl font-bold mb-2">
+                About this book
+            </h2>
+            {# Audible returns HTML; tags are stripped and the text escaped. #}
+            <p class="max-w-3xl leading-relaxed opacity-80 whitespace-pre-line">
+                {{ details.summary_html | replace('</p>', '\n\n') | replace("<br>", "\n") | replace("<br />", "\n") | striptags }}
+        </p>
+        </section>
+    {% endif %}
+
+    {% if series_books %}
+        <div class="w-full flex justify-center px-4 sm:px-8">
+            <Shelf title={{ "More in " ~ series_name }} description={{ series_books | length ~ " books in this series" }}>
+            {% for item in series_books %}
+                <div class="flex-none w-36 sm:w-44 snap-start"
+                     {% if item.reason == "This book" %}data-current{% endif %}>
+                    <BookCard book_with_requests={{ item.book }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} caption={{ item.reason }} />
+                </div>
+            {% endfor %}
+            </Shelf>
+        </div>
+    {% endif %}
+
+    {% if similar %}
+        <div class="w-full flex justify-center px-4 sm:px-8">
+            <Shelf title="Listeners also enjoyed">
+            {% for item in similar %}
+                <div class="flex-none w-36 sm:w-44 snap-start">
+                    <BookCard book_with_requests={{ item.book }} auto_start_download={{ auto_start_download }} region={{ region }} user={{ user }} />
+                </div>
+            {% endfor %}
+            </Shelf>
+        </div>
+    {% endif %}
+</div>
+</BaseLayout>

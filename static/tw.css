@@ -328,3 +328,11 @@
   border-radius: var(--radius-box);
   box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
 }
+
+/* Horizontal shelves: arrows on desktop, swipe on touch; no scrollbar. */
+.shelf-track {
+  scrollbar-width: none;
+}
+.shelf-track::-webkit-scrollbar {
+  display: none;
+}

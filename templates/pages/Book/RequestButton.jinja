@@ -1,0 +1,44 @@
+{#def
+    book_with_requests: AudiobookWithRequests,
+    auto_start_download: bool,
+    region: audible_region_type,
+    user: DetailedUser,
+#}
+
+{% set book = book_with_requests.book %}
+{% set will_download = auto_start_download and user.can_download() %}
+{# Swapped in place by /request/hx-add with variant=detail. #}
+<div class="book-request flex flex-wrap items-center gap-3">
+    {% if book.fulfilled %}
+        <span class="btn btn-success btn-lg rounded-full no-animation pointer-events-none gap-2">
+            <icons.Checkmark />
+            In your library
+        </span>
+    {% elif book_with_requests.already_requested %}
+        <span class="btn btn-info btn-lg rounded-full no-animation pointer-events-none gap-2">
+            <icons.Checkmark />
+            Requested
+        </span>
+    {% else %}
+        <button class="btn btn-primary btn-lg rounded-full gap-2 shadow-lg shadow-primary/30"
+                hx-post="{{ base_url }}/request/hx-add/{{ book.asin }}"
+                hx-vals='{"region": "{{ region }}", "variant": "detail"}'
+                hx-disabled-elt="this"
+                hx-target="closest .book-request"
+                hx-swap="outerHTML">
+            {% if will_download %}
+                <icons.Download />
+                Request &amp; download
+            {% else %}
+                <icons.Plus />
+                Request
+            {% endif %}
+        </button>
+    {% endif %}
+    {% if book_with_requests.requests | length %}
+        <span class="text-sm opacity-60">
+            {{ book_with_requests.requests | length }}
+            {{ "request" if book_with_requests.requests | length == 1 else "requests" }}
+        </span>
+    {% endif %}
+</div>

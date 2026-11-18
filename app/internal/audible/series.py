@@ -280,6 +280,63 @@ async def _fetch_products(
     return found
 
 
+async def _load_series(
+    client_session: ClientSession,
+    region: audible_region_type,
+    series_asin: str,
+    title: str,
+    key: str,
+) -> ResolvedSeries:
+    children = await _series_children(client_session, region, series_asin)
+    products = await _fetch_products(client_session, region, [c.asin for c in children])
+    best: dict[float, tuple[_Relationship, _ProductWithSeries]] = {}
+    for rel in children:
+        product = products.get(rel.asin)
+        pos = parse_position(rel.sequence) or parse_position(rel.sort)
+        if product is None or pos is None or _is_placeholder(product):
+            continue
+        current = best.get(pos)
+        # several editions can share a position; prefer the one with audio
+        if (
+            current is None
+            or product.runtime_length_min > current[1].runtime_length_min
+        ):
+            best[pos] = (rel, product)
+    entries = [
+        SeriesEntry(
+            position=pos,
+            sequence=rel.sequence or rel.sort or "",
+            book=product.to_audiobook(),
+        )
+        for pos, (rel, product) in sorted(best.items())
+    ]
+    return ResolvedSeries(key=key, name=title, asin=series_asin, entries=entries)
+
+
+async def series_by_asin(
+    client_session: ClientSession,
+    series_asin: str,
+    title: str,
+    region: audible_region_type | None = None,
+) -> ResolvedSeries | None:
+    """A series by its Audible ASIN (used on a book's page). Cached like resolve_series."""
+    region = region or get_region_from_settings()
+    cache_key = (region, f"asin:{series_asin}")
+    cached = _series_cache.get(cache_key)
+    if cached and time.time() - cached.timestamp < SERIES_TTL:
+        return cached.value
+    try:
+        result = await _load_series(
+            client_session, region, series_asin, title, series_key(title)
+        )
+    except Exception as e:
+        logger.warning("Audible: failed to load series", series=title, error=str(e))
+        _series_cache[cache_key] = _CacheEntry(None, time.time() - SERIES_TTL + 3600)
+        return None
+    _series_cache[cache_key] = _CacheEntry(result, time.time())
+    return result
+
+
 async def resolve_series(
     client_session: ClientSession,
     owned: OwnedSeries,
@@ -296,32 +353,8 @@ async def resolve_series(
         found = await _find_series_asin(client_session, region, owned)
         if found is not None:
             series_asin, title = found
-            children = await _series_children(client_session, region, series_asin)
-            products = await _fetch_products(
-                client_session, region, [c.asin for c in children]
-            )
-            best: dict[float, tuple[_Relationship, _ProductWithSeries]] = {}
-            for rel in children:
-                product = products.get(rel.asin)
-                pos = parse_position(rel.sequence) or parse_position(rel.sort)
-                if product is None or pos is None or _is_placeholder(product):
-                    continue
-                current = best.get(pos)
-                # several editions can share a position; prefer the one with audio
-                if current is None or (
-                    product.runtime_length_min > current[1].runtime_length_min
-                ):
-                    best[pos] = (rel, product)
-            entries = [
-                SeriesEntry(
-                    position=pos,
-                    sequence=rel.sequence or rel.sort or "",
-                    book=product.to_audiobook(),
-                )
-                for pos, (rel, product) in sorted(best.items())
-            ]
-            result = ResolvedSeries(
-                key=owned.key, name=title, asin=series_asin, entries=entries
+            result = await _load_series(
+                client_session, region, series_asin, title, owned.key
             )
     except Exception as e:
         logger.warning(
@@ -401,7 +434,7 @@ async def _build_series_rows(
             if _owns(index.owns(entry.book), entry, owned):
                 continue
             released = entry.book.release_date <= now
-            label = f"{res.name} · Book {entry.sequence}"
+            label = f"Book {entry.sequence} · {res.name}"
             if entry.position > furthest:
                 if not next_added and released:
                     rows.next_up.append(
@@ -409,7 +442,7 @@ async def _build_series_rows(
                             book=entry.book,
                             series_name=res.name,
                             sequence=entry.sequence,
-                            reason=f"Next in {label}",
+                            reason=label,
                         )
                     )
                     next_added = True
@@ -419,7 +452,7 @@ async def _build_series_rows(
                         book=entry.book,
                         series_name=res.name,
                         sequence=entry.sequence,
-                        reason=f"Missing from {label}",
+                        reason=label,
                     )
                 )
     rows.next_up = rows.next_up[:limit]

@@ -1,0 +1,70 @@
+{#def
+    title: str,
+    description: str | None = None,
+    href: str | None = None,
+    link_text: str = "See all",
+#}
+
+{# A titled, horizontally scrolling row of cards with arrow buttons. #}
+<section class="w-full max-w-7xl"
+         x-data="{ atStart: true, atEnd: false, update() { const t = this.$refs.track; this.atStart = t.scrollLeft < 8; this.atEnd = t.scrollLeft + t.clientWidth >= t.scrollWidth - 8; }, page(dir) { const t = this.$refs.track; t.scrollBy({ left: dir * t.clientWidth * 0.85, behavior: 'smooth' }); } }"
+         x-init="$nextTick(() => { const c = $refs.track.querySelector('[data-current]'); if (c) { $refs.track.scrollLeft = Math.max(0, c.offsetLeft - 24); } update(); })">
+    <div class="flex items-end justify-between gap-4 mb-3">
+        <div class="min-w-0">
+            <h2 class="text-xl sm:text-2xl font-bold tracking-tight">
+                {{ title }}
+            </h2>
+            {% if description %}
+                <p class="text-sm opacity-60 line-clamp-1">
+                    {{ description }}
+                </p>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            {% if href %}
+                <a href="{{ base_url }}{{ href }}"
+                   class="link link-hover link-primary text-sm font-semibold mr-1">{{ link_text }} →</a>
+            {% endif %}
+            <button type="button"
+                    class="btn btn-circle btn-sm btn-outline border-base-content/20 hidden sm:inline-flex"
+                    :disabled="atStart"
+                    @click="page(-1)"
+                    aria-label="Scroll {{ title }} left">
+                <svg xmlns="http://www.w3.org/2000/svg"
+                     class="size-4"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke="currentColor"
+                     stroke-width="2.5"
+                     aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+            <button type="button"
+                    class="btn btn-circle btn-sm btn-outline border-base-content/20 hidden sm:inline-flex"
+                    :disabled="atEnd"
+                    @click="page(1)"
+                    aria-label="Scroll {{ title }} right">
+                <svg xmlns="http://www.w3.org/2000/svg"
+                     class="size-4"
+                     fill="none"
+                     viewBox="0 0 24 24"
+                     stroke="currentColor"
+                     stroke-width="2.5"
+                     aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+        </div>
+    </div>
+    <div class="relative">
+        <div x-ref="track"
+             @scroll.debounce.50ms="update()"
+             class="shelf-track flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-3 -mx-1 px-1">
+            {{ content }}
+        </div>
+        <div class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-base-100 to-transparent transition-opacity"
+             :class="atEnd ? 'opacity-0' : 'opacity-100'">
+        </div>
+    </div>
+</section>

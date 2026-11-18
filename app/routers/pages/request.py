@@ -26,6 +26,7 @@ async def add_request(
     background_task: BackgroundTasks,
     user: Annotated[DetailedUser, Security(ABRAuth())],
     region: Annotated[audible_region_type | None, Form()] = None,
+    variant: Annotated[str, Form()] = "card",
 ):
     try:
         book = await create_request(
@@ -47,7 +48,7 @@ async def add_request(
     resolved_region = region or get_region_from_settings()
 
     return catalog_response(
-        "BookCard",
+        "Book.RequestButton" if variant == "detail" else "BookCard",
         book_with_requests=book,
         auto_start_download=quality_config.get_auto_download(session),
         region=resolved_region,

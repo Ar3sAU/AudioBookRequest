@@ -3,12 +3,13 @@ from typing import Annotated
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Query, Security
 from pydantic import BaseModel
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from app.internal.audible.series import owned_series
 from app.internal.audible.types import audible_region_type, get_region_from_settings
+from app.internal.audiobookshelf.library import library_sync_status
 from app.internal.auth.authentication import ABRAuth, DetailedUser
-from app.internal.models import AudiobookWithRequests
+from app.internal.models import Audiobook, AudiobookRequest, AudiobookWithRequests
 from app.internal.ranking.quality import quality_config
 from app.internal.recommendations.local import get_popular_books
 from app.routers.api.recommendations import (
@@ -55,13 +56,40 @@ def read_root(
             exclude_requested_username=user.username,
         )
     )
+    series = owned_series(session)
+    library_count, _ = library_sync_status(session)
+    open_requests = len(
+        session.exec(
+            select(AudiobookRequest.asin)
+            .join(Audiobook)
+            .where(
+                AudiobookRequest.user_username == user.username,
+                ~col(Audiobook.fulfilled),
+            )
+        ).all()
+    )
+    # covers for the hero: books already in the library, newest first
+    hero_covers = [
+        c
+        for c in session.exec(
+            select(Audiobook.cover_image)
+            .where(col(Audiobook.fulfilled), col(Audiobook.cover_image).is_not(None))
+            .order_by(col(Audiobook.updated_at).desc())
+            .limit(5)
+        ).all()
+        if c
+    ]
     return catalog_response(
         "Index.Index",
         user=user,
         region=get_region_from_settings(),
         auto_download=quality_config.get_auto_download(session),
         show_popular=show_popular,
-        show_series=bool(owned_series(session)),
+        show_series=bool(series),
+        library_count=library_count,
+        series_count=len(series),
+        open_requests=open_requests,
+        hero_covers=hero_covers,
     )
 
 
@@ -83,7 +111,7 @@ async def get_user_recommendations(
 
     return catalog_response(
         "Index.PopularSection",
-        title="For You",
+        title="For you",
         user=user,
         reasons=result.recommendations,
         view_more="/recommendations/for-you",
@@ -112,7 +140,7 @@ async def get_popular_recommendations(
 
     return catalog_response(
         "Index.PopularSection",
-        title="Popular",
+        title="Popular here",
         user=user,
         reasons=result,
         description="The most popular books on the instance",
@@ -342,6 +370,7 @@ async def get_series_row(
         title=title,
         user=user,
         reasons=result.next_up if row == "next" else result.missing,
+        show_reasons=True,
         description=description,
         empty=empty,
         region=get_region_from_settings(),

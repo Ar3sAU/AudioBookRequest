@@ -22,6 +22,8 @@
               href="{{ base_url }}/static/globals.css?v={{ version }}" />
         <script src="{{ base_url }}/static/htmx.js?v={{ version }}"></script>
         <script defer src="{{ base_url }}/static/htmx-preload.js?v={{ version }}"></script>
+        {# Alpine on every page: shelves (arrows) and settings forms use it; it also initialises htmx-swapped rows #}
+        <js.AlpineJS />
         <script>
             const setTheme = theme => {
                 if (!theme) {

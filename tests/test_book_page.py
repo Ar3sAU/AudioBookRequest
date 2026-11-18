@@ -114,3 +114,12 @@ def test_detail_request_button_variant(admin_client: TestClient, db: Session) ->
     card = admin_client.post("/request/hx-add/" + ASIN, data={"region": "us"})
     assert card.status_code == 200, card.text
     assert "book-card" in card.text
+
+
+def test_every_page_loads_alpine_once(admin_client: TestClient, audible: None) -> None:
+    """Shelf arrows need Alpine; it used to load only on four settings pages."""
+    _ = audible
+    for path in ["/", f"/book/{ASIN}", "/settings/prowlarr", "/settings/security"]:
+        page = admin_client.get(path)
+        assert page.status_code == 200, (path, page.text[:200])
+        assert page.text.count("/static/alpine.js") == 1, path

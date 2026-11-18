@@ -7,8 +7,8 @@
 
 {# A titled, horizontally scrolling row of cards with arrow buttons. #}
 <section class="w-full max-w-7xl"
-         x-data="{ atStart: true, atEnd: false, update() { const t = this.$refs.track; this.atStart = t.scrollLeft < 8; this.atEnd = t.scrollLeft + t.clientWidth >= t.scrollWidth - 8; }, page(dir) { const t = this.$refs.track; t.scrollBy({ left: dir * t.clientWidth * 0.85, behavior: 'smooth' }); } }"
-         x-init="$nextTick(() => { const c = $refs.track.querySelector('[data-current]'); if (c) { $refs.track.scrollLeft = Math.max(0, c.offsetLeft - 24); } update(); })">
+         x-data="{ atStart: true, atEnd: false, update() { const t = this.$refs.track; this.atStart = t.scrollLeft < 8; this.atEnd = t.scrollLeft + t.clientWidth >= t.scrollWidth - 8; }, page(dir) { const t = this.$refs.track; t.scrollBy({ left: dir * t.clientWidth * 0.85, behavior: 'smooth' }); setTimeout(() => this.update(), 600); } }"
+         x-init="$nextTick(() => { const t = $refs.track; const c = t.querySelector('[data-current]'); if (c) { t.scrollTo({ left: Math.max(0, c.offsetLeft - 24), behavior: 'instant' }); } update(); })">
     <div class="flex items-end justify-between gap-4 mb-3">
         <div class="min-w-0">
             <h2 class="text-xl sm:text-2xl font-bold tracking-tight">
@@ -60,7 +60,10 @@
     <div class="relative">
         <div x-ref="track"
              @scroll.debounce.50ms="update()"
-             class="shelf-track flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-3 -mx-1 px-1">
+             @scrollend="update()"
+             @resize.window.debounce.100ms="update()"
+             @load.window="update()"
+             class="shelf-track flex gap-4 overflow-x-auto snap-x snap-proximity pb-3 -mx-1 px-1">
             {{ content }}
         </div>
         <div class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-base-100 to-transparent transition-opacity"

@@ -524,13 +524,10 @@ def test_request_notes(admin_client: TestClient, trusted_client: TestClient) -> 
         ).status_code
         == 204
     )
-    manual = [
-        as_dict(item) for item in json_list(admin_client.get("/api/requests/manual"))
-    ]
-    assert (
-        next(item for item in manual if item["id"] == str(MANUAL_ID))["admin_note"]
-        == "Waiting for upload"
-    )
+    manual = [as_dict(item) for item in json_list(admin_client.get("/api/requests/manual"))]
+    assert next(item for item in manual if item["id"] == str(MANUAL_ID))[
+        "admin_note"
+    ] == "Waiting for upload"
 
 
 def test_create_request(admin_client: TestClient) -> None:

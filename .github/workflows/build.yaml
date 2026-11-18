@@ -84,7 +84,8 @@ jobs:
 
   build:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release'
+    # forks have no Docker Hub secrets; they publish via fork-image.yaml instead
+    if: github.repository == 'markbeep/AudioBookRequest' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -108,7 +108,8 @@ async def sync_abs_library(
         raise ToastException(str(e), "error") from e
     raise ToastException(
         f"Synced {result.total} books ({result.added} new, {result.removed} removed). "
-        + f"{result.newly_owned} known books marked as owned.",
+        + f"{result.newly_owned} known books marked as owned, "
+        + f"{result.unflagged} no longer owned.",
         "success",
         cause_refresh=True,
     )

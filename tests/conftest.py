@@ -34,6 +34,7 @@ from sqlmodel import Session
 
 from app.internal import models
 from app.internal.audible.search import search_cache, search_suggestions_cache
+from app.internal.audible.series import clear_series_cache
 from app.internal.audible.similar import sims_cache
 from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.library import invalidate_library_index
@@ -71,6 +72,7 @@ def _flush_caches() -> None:
     auth_config.flush()
     abs_config.flush()
     invalidate_library_index()
+    clear_series_cache()
     chaptarr_config.flush()
     download_backend_config.flush()
     oidc_config.flush()

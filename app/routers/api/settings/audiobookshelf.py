@@ -221,6 +221,7 @@ class LibrarySyncResponse(BaseModel):
     added: int
     removed: int
     newly_owned: int
+    unflagged: int
 
 
 @router.post("/sync", response_model=LibrarySyncResponse)
@@ -240,6 +241,7 @@ async def run_library_sync(
         added=result.added,
         removed=result.removed,
         newly_owned=result.newly_owned,
+        unflagged=result.unflagged,
     )
 
 

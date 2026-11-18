@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, Security
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app.internal.audible.series import owned_series
 from app.internal.audible.types import audible_region_type, get_region_from_settings
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.models import AudiobookWithRequests
@@ -27,6 +28,9 @@ from app.routers.api.recommendations import (
 )
 from app.routers.api.recommendations import (
     get_recently_requested_recommendations as api_get_recently_requested_recommendations,
+)
+from app.routers.api.recommendations import (
+    get_series_recommendations as api_get_series_recommendations,
 )
 from app.routers.api.recommendations import (
     get_user_recommendations as api_get_user_recommendations,
@@ -57,6 +61,7 @@ def read_root(
         region=get_region_from_settings(),
         auto_download=quality_config.get_auto_download(session),
         show_popular=show_popular,
+        show_series=bool(owned_series(session)),
     )
 
 
@@ -297,5 +302,48 @@ async def get_popular_narrators_recommendations(
         description="Books from popular narrators",
         empty="No popular narrator recommendations available at this time. Request some books to start getting recommendations.",
         region=region,
+        auto_start_download=quality_config.get_auto_download(session),
+    )
+
+
+_SERIES_ROWS = {
+    "next": (
+        "Next in your series",
+        "The next book in series you have in Audiobookshelf",
+        "You're up to date with every series in your library.",
+    ),
+    "missing": (
+        "Missing from your series",
+        "Earlier books you don't have yet",
+        "No gaps in the series in your library.",
+    ),
+}
+
+
+@router.get("/hx-series/{row}")
+async def get_series_row(
+    row: str,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: Annotated[DetailedUser, Security(ABRAuth())],
+):
+    if row not in _SERIES_ROWS:
+        row = "next"
+    result = await api_get_series_recommendations(
+        session=session,
+        client_session=client_session,
+        user=user,
+        limit=20,
+        audible_region=None,
+    )
+    title, description, empty = _SERIES_ROWS[row]
+    return catalog_response(
+        "Index.PopularSection",
+        title=title,
+        user=user,
+        reasons=result.next_up if row == "next" else result.missing,
+        description=description,
+        empty=empty,
+        region=get_region_from_settings(),
         auto_start_download=quality_config.get_auto_download(session),
     )

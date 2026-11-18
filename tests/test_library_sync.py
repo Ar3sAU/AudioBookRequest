@@ -11,7 +11,7 @@ from app.internal.audiobookshelf.library import (
     split_names,
 )
 from app.internal.models import Audiobook, LibraryItem
-from tests.constants import ASIN
+from tests.constants import ASIN, FULFILLED_ASIN
 from tests.http import json_object
 from tests.mock_services import MockServer
 
@@ -81,10 +81,21 @@ def _abs_item(
 def test_core_title_strips_series_noise() -> None:
     assert core_title("The Way of Kings (Stormlight Archive, Book 1)") == "way of kings"
     assert (
-        core_title("Mistborn: The Final Empire, Book 1") == "mistborn the final empire"
+        core_title("Mistborn: The Final Empire, Book 1")
+        == "mistborn the final empire 1"
     )
     assert core_title("Project Hail Mary [Unabridged]") == "project hail mary"
     assert core_title("Café Society & Friends") == "cafe society and friends"
+
+
+def test_core_title_keeps_book_numbers() -> None:
+    assert core_title("Defiance of the Fall, Book 10 (Unabridged)") == core_title(
+        "Defiance of the Fall 10"
+    )
+    assert core_title("Defiance of the Fall, Book 10") != core_title(
+        "Defiance of the Fall"
+    )
+    assert core_title("The Primal Hunter 3 (Unabridge") == "primal hunter 3"
 
 
 def test_author_key_handles_name_order() -> None:
@@ -146,6 +157,18 @@ def test_index_fuzzy_match_requires_shared_author() -> None:
     assert not index.owns(
         _book("Harry Potter and the Philosopher's Stone", ["Someone Else"])
     )
+
+
+def test_index_fuzzy_match_respects_book_numbers() -> None:
+    index = _index(
+        _item("1", "The Primal Hunter 2", ["Zogarth"]),
+        _item("2", "Defiance of the Fall, Book 10", ["JF Brink"]),
+    )
+    assert not index.owns(_book("The Primal Hunter", ["Zogarth"]))
+    assert not index.owns(_book("The Primal Hunter 3", ["Zogarth"]))
+    assert index.owns(_book("Primal Hunter 2", ["Zogarth"]))
+    assert index.owns(_book("Defiance of the Fall 10", ["JF Brink"]))
+    assert not index.owns(_book("Defiance of the Fall", ["JF Brink"]))
 
 
 def test_index_rejects_same_title_different_author() -> None:
@@ -213,7 +236,13 @@ def test_resync_removes_deleted_items(
 
     abs_service.state["abs_items"] = [_abs_item("i2", "Book Two Renamed", "A Author")]
     body = json_object(admin_client.post("/api/settings/audiobookshelf/sync"))
-    assert body == {"total": 1, "added": 0, "removed": 1, "newly_owned": 0}
+    assert body == {
+        "total": 1,
+        "added": 0,
+        "removed": 1,
+        "newly_owned": 0,
+        "unflagged": 0,
+    }
 
     db.expire_all()
     remaining = db.exec(select(LibraryItem)).all()
@@ -234,3 +263,23 @@ def test_settings_page_sync_button(
 
     page = admin_client.get("/settings/audiobookshelf")
     assert "1 books synced" in page.text
+
+
+def test_resync_unflags_unrequested_books_no_longer_in_library(
+    admin_client: TestClient, abs_service: MockServer, db: Session
+) -> None:
+    db.add(_book("Gone Book", ["A Author"], asin="B0GONE"))
+    db.commit()
+    abs_service.state["abs_items"] = [_abs_item("i1", "Gone Book", "A Author")]
+    first = json_object(admin_client.post("/api/settings/audiobookshelf/sync"))
+    assert first["newly_owned"] == 1
+
+    abs_service.state["abs_items"] = []
+    second = json_object(admin_client.post("/api/settings/audiobookshelf/sync"))
+    assert second["unflagged"] == 1
+    db.expire_all()
+    gone = db.get(Audiobook, "B0GONE")
+    assert gone is not None and not gone.fulfilled
+    # a requested + fulfilled book (a real download) is left alone
+    kept = db.get(Audiobook, FULFILLED_ASIN)
+    assert kept is not None and kept.fulfilled

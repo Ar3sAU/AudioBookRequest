@@ -26,7 +26,7 @@ from rapidfuzz import fuzz
 from sqlmodel import Session, col, delete, select
 
 from app.internal.audiobookshelf.config import abs_config
-from app.internal.models import Audiobook, LibraryItem
+from app.internal.models import Audiobook, AudiobookRequest, LibraryItem
 from app.util.connection import USER_AGENT
 from app.util.log import logger
 
@@ -37,10 +37,12 @@ FUZZY_THRESHOLD = 92
 # Normalisation
 # ---------------------------------------------------------------------------
 
-_BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]")
-_SERIES_SUFFIX = re.compile(
-    r"[,:\-\s]+(?:book|volume|vol|part|novel)\s*\d+(?:\.\d+)?\s*$", re.IGNORECASE
-)
+# also unclosed ones: ABS titles get cut off, e.g. "The Primal Hunter 3 (Unabridge"
+_BRACKETS = re.compile(r"\([^)]*(?:\)|$)|\[[^\]]*(?:\]|$)")
+# "Book 10", "Vol. 2", "Part 3" -> "10", "2", "3": keeps the number, so
+# "Defiance of the Fall, Book 10" and "Defiance of the Fall 10" agree while
+# still differing from book 9.
+_NUMBER_WORD = re.compile(r"\b(?:book|volume|vol|part|novel|no)\s+(\d)")
 _UNABRIDGED = re.compile(r"\b(?:un)?abridged\b", re.IGNORECASE)
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 _LEADING_ARTICLE = re.compile(r"^(?:the|a|an) ")
@@ -57,8 +59,8 @@ def core_title(title: str) -> str:
     """Title reduced to what identifies the work across Audible and ABS."""
     title = _BRACKETS.sub(" ", title)
     title = _UNABRIDGED.sub(" ", title)
-    title = _SERIES_SUFFIX.sub("", title)
-    return _LEADING_ARTICLE.sub("", normalize(title))
+    title = _NUMBER_WORD.sub(r"\1", normalize(title))
+    return _LEADING_ARTICLE.sub("", title)
 
 
 def title_variants(title: str, subtitle: str | None) -> set[str]:
@@ -138,9 +140,23 @@ class LibraryIndex:
                 return True
         for a in authors:
             for candidate in self.by_author.get(a, ()):
-                if any(fuzz.ratio(v, candidate) >= FUZZY_THRESHOLD for v in variants):
+                if any(_fuzzy_same(v, candidate) for v in variants):
                     return True
         return False
+
+
+_DIGITS = re.compile(r"\d+")
+
+
+def _fuzzy_same(a: str, b: str) -> bool:
+    """Near-identical titles with the same numbers.
+
+    Without the number check "primal hunter" and "primal hunter 2" score 93
+    and book 1 of every series would count as owned once book 2 is.
+    """
+    if _DIGITS.findall(a) != _DIGITS.findall(b):
+        return False
+    return fuzz.ratio(a, b) >= FUZZY_THRESHOLD
 
 
 _index: LibraryIndex | None = None
@@ -221,6 +237,7 @@ class SyncResult:
     added: int = 0
     removed: int = 0
     newly_owned: int = 0
+    unflagged: int = 0
 
 
 class LibrarySyncError(RuntimeError):
@@ -339,6 +356,20 @@ async def sync_library(session: Session, client_session: ClientSession) -> SyncR
         session.exec(select(Audiobook).where(~col(Audiobook.fulfilled))).all()
     )
     result.newly_owned = len(mark_owned(session, unflagged))
+
+    # A fulfilled book nobody requested can only have been flagged by library
+    # matching, so re-evaluate it: clears books removed from Audiobookshelf and
+    # any earlier false match. Requested books keep their download state.
+    index = get_library_index(session)
+    requested = select(col(AudiobookRequest.asin)).distinct()
+    for book in session.exec(
+        select(Audiobook).where(
+            col(Audiobook.fulfilled), col(Audiobook.asin).not_in(requested)
+        )
+    ).all():
+        if not index.owns(book):
+            book.fulfilled = False
+            result.unflagged += 1
     session.commit()
 
     logger.info(
@@ -347,6 +378,7 @@ async def sync_library(session: Session, client_session: ClientSession) -> SyncR
         added=result.added,
         removed=result.removed,
         newly_owned=result.newly_owned,
+        unflagged=result.unflagged,
     )
     return result
 

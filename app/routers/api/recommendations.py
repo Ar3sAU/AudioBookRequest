@@ -3,15 +3,18 @@ from typing import Annotated
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Query, Security
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.internal.audible.category import (
     list_category_audible_books,
     list_combined_audible_books,
 )
+from app.internal.audible.search import upsert_books
+from app.internal.audible.series import SeriesSuggestion, build_series_rows
 from app.internal.audible.types import audible_region_type, get_region_from_settings
 from app.internal.auth.authentication import AnyAuth, DetailedUser
-from app.internal.models import AudiobookWithRequests
+from app.internal.models import Audiobook, AudiobookWithRequests
 from app.internal.recommendations.local import (
     AudiobookPopularity,
     get_most_popular_authors,
@@ -19,6 +22,7 @@ from app.internal.recommendations.local import (
     get_recently_requested_books,
 )
 from app.internal.recommendations.user_recommendations import (
+    AudiobookRecommendation,
     UserSimsRecommendation,
     get_user_sims_recommendations,
 )
@@ -258,4 +262,61 @@ async def get_popular_narrators_recommendations(
         search_terms=author_narrators.narrators,
         num_results=limit,
         audible_region=audible_region,
+    )
+
+
+class SeriesRecommendations(BaseModel):
+    next_up: list[AudiobookRecommendation]
+    missing: list[AudiobookRecommendation]
+
+
+def _series_to_recommendations(
+    suggestions: list[SeriesSuggestion],
+    stored: dict[str, Audiobook],
+    username: str,
+) -> list[AudiobookRecommendation]:
+    result: list[AudiobookRecommendation] = []
+    for s in suggestions:
+        book = stored.get(s.book.asin)
+        # upsert re-checks the library, and a download may have landed since
+        if book is None or book.fulfilled:
+            continue
+        result.append(
+            AudiobookRecommendation(
+                book=AudiobookWithRequests(
+                    book=book, requests=book.requests, username=username
+                ),
+                reason=s.reason,
+            )
+        )
+    return result
+
+
+@router.get("/series", response_model=SeriesRecommendations)
+async def get_series_recommendations(
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: Annotated[DetailedUser, Security(AnyAuth())],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    audible_region: audible_region_type | None = None,
+) -> SeriesRecommendations:
+    """Next book and missing books for series in the Audiobookshelf library.
+
+    Requires the Audiobookshelf library sync; empty otherwise.
+    """
+    rows = await build_series_rows(
+        session,
+        client_session,
+        region=audible_region or get_region_from_settings(),
+        limit=limit,
+    )
+    # one upsert (one commit) for both rows: a second commit would expire the
+    # first row's objects before they are serialised
+    stored = {
+        b.asin: b
+        for b in upsert_books(session, [s.book for s in rows.next_up + rows.missing])
+    }
+    return SeriesRecommendations(
+        next_up=_series_to_recommendations(rows.next_up, stored, user.username),
+        missing=_series_to_recommendations(rows.missing, stored, user.username),
     )

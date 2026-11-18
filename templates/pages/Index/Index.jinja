@@ -3,6 +3,7 @@
     auto_download: bool,
     region: audible_region_type,
     show_popular: bool, # no need to show popular if sole user with requests
+    show_series: bool = False, # library has series (needs Audiobookshelf sync)
 #}
 
 <BaseLayout title="AudioBookRequest" user={{ user }}>
@@ -28,6 +29,10 @@
         </div>
     </div>
 
+    {% if show_series %}
+        <Index.PopularSection title="Next in your series" user={{ user }} lazy_url="/hx-series/next" description="The next book in series you have in Audiobookshelf" region={{ region }} auto_start_download={{ auto_download }} />
+        <Index.PopularSection title="Missing from your series" user={{ user }} lazy_url="/hx-series/missing" description="Earlier books you don't have yet" region={{ region }} auto_start_download={{ auto_download }} />
+    {% endif %}
     <Index.PopularSection title="For You" user={{ user }} view_more="/recommendations/for-you" lazy_url="/hx-for-you" description="Personalized recommendations based on your requests" empty="No recommendations available at this time. Request some books to start getting recommendations." region={{ region }} auto_start_download={{ auto_download }} />
     {% if show_popular %}
         <Index.PopularSection title="Popular" user={{ user }} lazy_url="/hx-popular" description="The most popular books on the instance" empty="No popular recommendations available at this time. Request some books to start getting recommendations." region={{ region }} auto_start_download={{ auto_download }} />

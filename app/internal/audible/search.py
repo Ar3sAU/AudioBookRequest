@@ -224,10 +224,16 @@ def upsert_books(session: Session, books: list[Audiobook]) -> list[Audiobook]:
             select(Audiobook).where(col(Audiobook.asin).in_({b.asin for b in books}))
         ).all()
     }
+    # local import: library -> models only, but keep audible free of ABS at import time
+    from app.internal.audiobookshelf.library import get_library_index
+
+    index = get_library_index(session)
     stored: list[Audiobook] = []
     for book in books:
         cached = existing.get(book.asin)
         if cached is None:
+            if index.owns(book):
+                book.fulfilled = True
             session.add(book)
             stored.append(book)
             continue

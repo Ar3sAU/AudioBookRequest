@@ -34,6 +34,10 @@ async def list_combined_audible_books(
     else:
         requested_asins = set[str]()
 
+    from app.internal.audiobookshelf.library import get_library_index
+
+    library = get_library_index(session)
+
     for term in search_terms:
         logger.debug("Searching for term", term=term)
         try:
@@ -50,6 +54,7 @@ async def list_combined_audible_books(
             for book in term_books:
                 if (
                     book.asin not in requested_asins
+                    and not library.owns(book)
                     and book not in all_books
                     and len(all_books) < num_results
                 ):

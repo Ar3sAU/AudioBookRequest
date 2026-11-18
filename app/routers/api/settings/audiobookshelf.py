@@ -1,6 +1,10 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from aiohttp import ClientSession
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Security
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -11,6 +15,11 @@ from app.internal.audiobookshelf.client import (
     abs_trigger_scan,
 )
 from app.internal.audiobookshelf.config import AudiobookshelfMisconfigured, abs_config
+from app.internal.audiobookshelf.library import (
+    LibrarySyncError,
+    library_sync_status,
+    sync_library,
+)
 from app.internal.audiobookshelf.types import ABSLibrary
 from app.internal.auth.authentication import AnyAuth, DetailedUser
 from app.internal.models import GroupEnum
@@ -19,7 +28,38 @@ from app.util.db import get_session
 from app.util.log import logger
 from app.util.request import form_or_json_openapi, model_from_request
 
-router = APIRouter(prefix="/audiobookshelf")
+SYNC_INTERVAL_MINUTES = 30
+
+
+async def scheduled_library_sync() -> None:
+    with next(get_session()) as session:
+        if not abs_config.is_valid(session):
+            return
+        async with ClientSession() as client_session:
+            try:
+                await sync_library(session, client_session)
+            except Exception as e:
+                logger.warning("ABS: scheduled library sync failed", error=str(e))
+
+
+@asynccontextmanager
+async def lifespan(app: object) -> AsyncIterator[None]:
+    _ = app
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        scheduled_library_sync,
+        "interval",
+        minutes=SYNC_INTERVAL_MINUTES,
+        next_run_time=datetime.now() + timedelta(seconds=30),
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+
+router = APIRouter(prefix="/audiobookshelf", lifespan=lifespan)
 
 
 class ABSResponse(BaseModel):
@@ -174,3 +214,44 @@ async def test_abs_connection(
         triggered_scan=success,
         sample_items=[item.title for item in list_library_items[:5]],
     )
+
+
+class LibrarySyncResponse(BaseModel):
+    total: int
+    added: int
+    removed: int
+    newly_owned: int
+
+
+@router.post("/sync", response_model=LibrarySyncResponse)
+async def run_library_sync(
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    _: Annotated[DetailedUser, Security(AnyAuth(GroupEnum.admin))],
+):
+    """Copy the configured Audiobookshelf library into ABR now."""
+    try:
+        abs_config.raise_if_invalid(session)
+        result = await sync_library(session, client_session)
+    except (AudiobookshelfMisconfigured, LibrarySyncError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return LibrarySyncResponse(
+        total=result.total,
+        added=result.added,
+        removed=result.removed,
+        newly_owned=result.newly_owned,
+    )
+
+
+class LibrarySyncStatusResponse(BaseModel):
+    item_count: int
+    last_synced: datetime | None
+
+
+@router.get("/sync", response_model=LibrarySyncStatusResponse)
+async def read_library_sync_status(
+    session: Annotated[Session, Depends(get_session)],
+    _: Annotated[DetailedUser, Security(AnyAuth(GroupEnum.admin))],
+):
+    count, last = library_sync_status(session)
+    return LibrarySyncStatusResponse(item_count=count, last_synced=last)

@@ -51,6 +51,7 @@ class MockState(TypedDict):
     notification_status: int
     notification_payloads: list[NotificationPayload]
     abs_libraries: list[dict[str, object]]
+    abs_items: list[dict[str, object]] | None
     oidc_userinfo: dict[str, object]
     chaptarr_lookup: list[dict[str, object]]
     chaptarr_added: list[dict[str, object]]
@@ -196,6 +197,7 @@ def default_state(base_url: str) -> MockState:
         "notification_status": 200,
         "notification_payloads": [],
         "abs_libraries": [{"id": "lib-1", "name": "Audiobooks", "mediaType": "book"}],
+        "abs_items": None,
         "oidc_userinfo": {
             "sub": "oidc-user",
             "preferred_username": "oidc-user",
@@ -317,6 +319,10 @@ def install_audiobookshelf(mock: MockServer, prefix: str = "/abs") -> None:
         return web.json_response({})
 
     async def items(_: web.Request) -> web.Response:
+        if mock.state["abs_items"] is not None:
+            return web.json_response(
+                {"mediaType": "book", "results": mock.state["abs_items"]}
+            )
         return web.json_response(
             {
                 "mediaType": "book",

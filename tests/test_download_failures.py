@@ -103,7 +103,9 @@ def test_page_auto_download_redirects_to_prowlarr_settings(
         f"/wishlist/hx-auto-download/{ASIN}", headers={"HX-Request": "true"}
     )
     assert response.status_code == 400
-    assert response.headers["HX-Redirect"] == "/settings/prowlarr?prowlarr_misconfigured=1"
+    assert (
+        response.headers["HX-Redirect"] == "/settings/prowlarr?prowlarr_misconfigured=1"
+    )
     assert admin_client.get("/settings/prowlarr").status_code == 200
 
 

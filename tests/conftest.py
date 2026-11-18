@@ -36,6 +36,7 @@ from app.internal import models
 from app.internal.audible.search import search_cache, search_suggestions_cache
 from app.internal.audible.similar import sims_cache
 from app.internal.audiobookshelf.config import abs_config
+from app.internal.audiobookshelf.library import invalidate_library_index
 from app.internal.auth.authentication import create_user
 from app.internal.auth.config import auth_config
 from app.internal.auth.login_types import LoginTypeEnum
@@ -69,6 +70,7 @@ from tests import mock_services
 def _flush_caches() -> None:
     auth_config.flush()
     abs_config.flush()
+    invalidate_library_index()
     chaptarr_config.flush()
     download_backend_config.flush()
     oidc_config.flush()

@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated, Literal, cast
 
@@ -296,3 +296,26 @@ class APIKey(BaseSQLModel, table=True):
         ),
     )
     enabled: bool = True
+
+
+class LibraryItem(BaseSQLModel, table=True):
+    """A local copy of one book in the configured Audiobookshelf library.
+
+    Kept in sync by a background job so "do I already own this?" is a cheap
+    lookup instead of a live Audiobookshelf search on every page load.
+    """
+
+    abs_id: str = Field(primary_key=True)
+    library_id: str = Field(index=True)
+    asin: str | None = Field(default=None, index=True)
+    title: str
+    subtitle: str | None = None
+    norm_title: str = Field(index=True)
+    authors: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    narrators: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    series: list[dict[str, str | None]] = Field(
+        default_factory=list, sa_column=Column(JSON)
+    )
+    duration_min: int = 0
+    added_at: datetime | None = None
+    synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

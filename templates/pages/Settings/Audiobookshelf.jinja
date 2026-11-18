@@ -5,6 +5,8 @@
     abs_library_id: str,
     abs_check_downloaded: bool,
     abs_libraries: list[ABSLibrary],
+    library_item_count: int = 0,
+    library_last_synced: datetime | None = None,
 #}
 
 <SettingsLayout user={{ user }} page="audiobookshelf" title="Settings - Audiobookshelf">
@@ -98,6 +100,29 @@
             <span class="font-bold">Note:</span> This feature either checks if the ASIN has been added to the metadata of a book in ABS, or else it performs a
             best-effort matching of the book title and author. It may therefore miss some books that are already downloaded.
         </p>
+    </div>
+    <div class="flex flex-col gap-2 pt-4">
+        <h3 class="text-base">
+            Library sync
+        </h3>
+        <p class="text-xs opacity-60">
+            ABR keeps a local copy of your Audiobookshelf library so every page knows what you already own, without
+            querying Audiobookshelf on each load. It syncs automatically every 30 minutes while the option above is enabled.
+        </p>
+        <p class="text-sm">
+            {% if library_last_synced %}
+                {{ library_item_count }} books synced, last at {{ library_last_synced.strftime("%Y-%m-%d %H:%M") }}.
+            {% else %}
+                Not synced yet.
+            {% endif %}
+        </p>
+        <button id="abs-sync-button"
+                class="btn w-fit"
+                hx-post="{{ base_url }}/settings/audiobookshelf/hx-sync"
+                hx-disabled-elt="this"
+                {% if not abs_check_downloaded %}disabled{% endif %}>
+            Sync library now
+        </button>
     </div>
 </div>
 

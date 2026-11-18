@@ -4,7 +4,12 @@ from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Form, Response, Security
 from sqlmodel import Session
 
-from app.internal.audiobookshelf.config import abs_config
+from app.internal.audiobookshelf.config import AudiobookshelfMisconfigured, abs_config
+from app.internal.audiobookshelf.library import (
+    LibrarySyncError,
+    library_sync_status,
+    sync_library,
+)
 from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.models import GroupEnum
 from app.routers.api.settings.audiobookshelf import (
@@ -13,6 +18,7 @@ from app.routers.api.settings.audiobookshelf import (
 from app.util.connection import get_connection
 from app.util.db import get_session
 from app.util.templates import catalog_response
+from app.util.toast import ToastException
 
 router = APIRouter(prefix="/audiobookshelf")
 
@@ -29,8 +35,12 @@ async def read_abs(
         admin_user=admin_user,
     )
 
+    library_item_count, library_last_synced = library_sync_status(session)
+
     return catalog_response(
         "Settings.Audiobookshelf",
+        library_item_count=library_item_count,
+        library_last_synced=library_last_synced,
         user=admin_user,
         abs_base_url=response.abs_base_url,
         abs_api_token=response.abs_api_token,
@@ -82,3 +92,23 @@ def update_abs_check_downloaded(
     _ = admin_user
     abs_config.set_check_downloaded(session, check_downloaded)
     return Response(status_code=204, headers={"HX-Refresh": "true"})
+
+
+@router.post("/hx-sync")
+async def sync_abs_library(
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    admin_user: Annotated[DetailedUser, Security(ABRAuth(GroupEnum.admin))],
+):
+    _ = admin_user
+    try:
+        abs_config.raise_if_invalid(session)
+        result = await sync_library(session, client_session)
+    except (AudiobookshelfMisconfigured, LibrarySyncError) as e:
+        raise ToastException(str(e), "error") from e
+    raise ToastException(
+        f"Synced {result.total} books ({result.added} new, {result.removed} removed). "
+        + f"{result.newly_owned} known books marked as owned.",
+        "success",
+        cause_refresh=True,
+    )

@@ -294,6 +294,14 @@ async def abs_mark_downloaded_flags(
 ) -> None:
     if not abs_config.get_check_downloaded(session):
         return
+    # Prefer the synced local library copy: no ABS calls and no 25-book cap.
+    from app.internal.audiobookshelf.library import get_library_index, mark_owned
+
+    if get_library_index(session).size:
+        mark_owned(session, [b for b in books if not b.fulfilled])
+        session.commit()
+        return
+    # Fallback before the first sync: live ABS search per book.
     # Only check books not already marked fulfilled
     to_check = [b for b in books if not b.fulfilled]
     # Limit to avoid flooding ABS

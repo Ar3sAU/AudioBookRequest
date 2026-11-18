@@ -1,0 +1,67 @@
+# Fork-only workflow: builds the lab image and pushes it to GHCR.
+# Upstream's build.yaml publishes to Docker Hub with secrets this fork does
+# not have, so it is left untouched (its `test` job still runs on pushes).
+name: Fork image (GHCR)
+
+on:
+  push:
+    branches: [main, "feat/**"]
+    tags: ["v*-lab.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: fork-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/audiobookrequest
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine tags
+        id: vars
+        run: |
+          image="$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+          short="${GITHUB_SHA::7}"
+          base="$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)"
+          tags="$image:sha-$short"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tags="$tags,$image:${GITHUB_REF_NAME#v},$image:latest"
+            version="${GITHUB_REF_NAME#v}"
+          else
+            branch="$(echo "$GITHUB_REF_NAME" | tr '/' '-' | tr '[:upper:]' '[:lower:]')"
+            tags="$tags,$image:$branch"
+            version="$base+lab.$short"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.vars.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.vars.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=AudioBookRequest fork with Audiobookshelf library sync
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

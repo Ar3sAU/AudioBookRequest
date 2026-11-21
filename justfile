@@ -33,5 +33,5 @@ test:
     uv run basedpyright
     uv run djlint templates --extension=jinja --check
     uv run ruff format --check app
-    uv run app/util/test_jinjax.py templates/ -g content base_url json_regexp audible_regions version changelog getattr -f toJSstring
+    uv run app/util/test_jinjax.py templates/ -g content base_url json_regexp audible_regions version changelog getattr abr_library_choices -f toJSstring
     uv run pytest tests

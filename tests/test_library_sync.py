@@ -3,14 +3,16 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.library import (
     LibraryIndex,
     author_key,
     core_title,
+    library_choices,
     parse_series,
     split_names,
 )
-from app.internal.models import Audiobook, LibraryItem
+from app.internal.models import Audiobook, AudiobookRequest, LibraryItem
 from tests.constants import ASIN, FULFILLED_ASIN
 from tests.http import json_object
 from tests.mock_services import MockServer
@@ -283,3 +285,104 @@ def test_resync_unflags_unrequested_books_no_longer_in_library(
     # a requested + fulfilled book (a real download) is left alone
     kept = db.get(Audiobook, FULFILLED_ASIN)
     assert kept is not None and kept.fulfilled
+
+
+# -- per-library requests (21 Nov 2026) -------------------------------------------------------------
+
+
+def test_index_find_returns_the_matching_item() -> None:
+    index = LibraryIndex()
+    index.add(_item("a1", "Words of Radiance", ["Brandon Sanderson"], asin="B0WOR"))
+    index.add(_item("a2", "The Tenant", ["Freida McFadden"]))
+    assert index.find(_book("Anything", ["Nobody"], asin="B0WOR")) == "a1"
+    assert index.find(_book("The Tenant (Unabridged)", ["Freida McFadden"])) == "a2"
+    assert index.find(_book("The Tenant", ["Someone Else"])) is None
+    assert index.find(_book("Not In Library", ["Freida McFadden"])) is None
+    assert LibraryIndex().find(_book("The Tenant", ["Freida McFadden"])) is None
+
+
+def test_sync_flags_and_clears_a_book_for_another_library(
+    admin_client: TestClient, abs_service: MockServer, db: Session
+) -> None:
+    abs_service.state["abs_libraries"] = [
+        {"id": "lib-1", "name": "Audiobooks", "mediaType": "book"},
+        {"id": "lib-2", "name": "Main", "mediaType": "book"},
+        {"id": "pod", "name": "Podcasts", "mediaType": "podcast"},
+    ]
+    db.add(_book("Nancy Book", ["Nancy Author"], asin="B0NANCY"))
+    db.add(AudiobookRequest(asin="B0NANCY", user_username="root", library_id="lib-2"))
+    db.commit()
+    abs_service.state["abs_items"] = [_abs_item("n1", "Nancy Book", "Nancy Author")]
+
+    assert admin_client.post("/api/settings/audiobookshelf/sync").status_code == 200
+    db.expire_all()
+    req = db.get(AudiobookRequest, ("B0NANCY", "root"))
+    assert req is not None and req.move_abs_id == "n1"
+    with Session(db.get_bind()) as s:
+        assert abs_config.get_libraries(s) == [
+            {"id": "lib-1", "name": "Audiobooks"},
+            {"id": "lib-2", "name": "Main"},
+        ]
+        assert library_choices(s) == [("lib-1", "Audiobooks"), ("lib-2", "Main")]
+
+    # once the media host has moved it, the item is gone from this library: flag cleared
+    abs_service.state["abs_items"] = []
+    assert admin_client.post("/api/settings/audiobookshelf/sync").status_code == 200
+    db.expire_all()
+    req = db.get(AudiobookRequest, ("B0NANCY", "root"))
+    assert req is not None and req.move_abs_id is None
+
+
+def test_request_uses_the_library_chosen_in_the_navbar(
+    admin_client: TestClient, abs_service: MockServer, db: Session
+) -> None:
+    _ = abs_service
+    abs_config.set_libraries(
+        db, [{"id": "lib-1", "name": "Audiobooks"}, {"id": "lib-2", "name": "Main"}]
+    )
+    db.add(_book("For Main", ["A Author"], asin="B0FORMAIN"))
+    db.add(_book("For Me", ["A Author"], asin="B0FORME"))
+    db.add(_book("Bad Cookie", ["A Author"], asin="B0BADCOOKIE"))
+    db.commit()
+
+    page = admin_client.get("/wishlist")
+    assert 'id="abr-library"' in page.text and ">Main</option>" in page.text
+
+    admin_client.cookies.set("abr_library", "lib-2")
+    assert (
+        admin_client.post(
+            "/request/hx-add/B0FORMAIN", data={"region": "us"}
+        ).status_code
+        == 200
+    )
+    admin_client.cookies.set("abr_library", "lib-1")
+    assert (
+        admin_client.post("/request/hx-add/B0FORME", data={"region": "us"}).status_code
+        == 200
+    )
+    admin_client.cookies.set("abr_library", "not-a-library")
+    assert (
+        admin_client.post(
+            "/request/hx-add/B0BADCOOKIE", data={"region": "us"}
+        ).status_code
+        == 200
+    )
+    admin_client.cookies.clear()
+
+    db.expire_all()
+    got = {
+        r.asin: r.library_id
+        for r in db.exec(
+            select(AudiobookRequest).where(AudiobookRequest.user_username == "root")
+        ).all()
+        if r.asin in {"B0FORMAIN", "B0FORME", "B0BADCOOKIE"}
+    }
+    assert got == {"B0FORMAIN": "lib-2", "B0FORME": None, "B0BADCOOKIE": None}
+
+
+def test_no_library_switch_with_one_library(
+    admin_client: TestClient, abs_service: MockServer, db: Session
+) -> None:
+    _ = abs_service
+    abs_config.set_libraries(db, [{"id": "lib-1", "name": "Audiobooks"}])
+    assert 'id="abr-library"' not in admin_client.get("/wishlist").text

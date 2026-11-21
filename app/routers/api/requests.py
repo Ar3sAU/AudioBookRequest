@@ -22,6 +22,7 @@ from app.internal.audible.types import (
 )
 from app.internal.audiobookshelf.client import background_abs_trigger_scan
 from app.internal.audiobookshelf.config import abs_config
+from app.internal.audiobookshelf.library import resolve_request_library
 from app.internal.auth.authentication import AnyAuth, DetailedUser
 from app.internal.db_queries import get_wishlist_results
 from app.internal.download_backend import get_download_backend
@@ -127,6 +128,12 @@ async def create_request(
         audible_region_type | None,
         Query(description="Audible region. Defaults to the configured region."),
     ] = None,
+    library_id: Annotated[
+        str | None,
+        Query(
+            description="Audiobookshelf library the book is for. Defaults to the configured library."
+        ),
+    ] = None,
 ) -> AudiobookWithRequests:
     if region is None:
         region = get_region_from_settings()
@@ -159,7 +166,11 @@ async def create_request(
             AudiobookRequest.user_username == user.username,
         )
     ).first():
-        book_request = AudiobookRequest(asin=asin_or_uuid, user_username=user.username)
+        book_request = AudiobookRequest(
+            asin=asin_or_uuid,
+            user_username=user.username,
+            library_id=resolve_request_library(session, library_id),
+        )
         session.add(book_request)
         session.commit()
         logger.info(

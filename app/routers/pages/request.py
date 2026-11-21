@@ -1,7 +1,15 @@
 from typing import Annotated
 
 from aiohttp import ClientSession
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Security
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Cookie,
+    Depends,
+    Form,
+    HTTPException,
+    Security,
+)
 from sqlmodel import Session
 
 from app.internal.audible.types import audible_region_type, get_region_from_settings
@@ -27,6 +35,7 @@ async def add_request(
     user: Annotated[DetailedUser, Security(ABRAuth())],
     region: Annotated[audible_region_type | None, Form()] = None,
     variant: Annotated[str, Form()] = "card",
+    abr_library: Annotated[str | None, Cookie()] = None,
 ):
     try:
         book = await create_request(
@@ -36,6 +45,7 @@ async def add_request(
             background_task=background_task,
             user=user,
             region=region,
+            library_id=abr_library,
         )
     except HTTPException as e:
         logger.warning(

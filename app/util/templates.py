@@ -50,6 +50,23 @@ templates.env.globals["json_regexp"] = (  # pyright: ignore[reportArgumentType]
 templates.env.globals["base_url"] = Settings().app.base_url.rstrip("/")  # pyright: ignore[reportArgumentType]
 templates.env.globals["audible_regions"] = audible_regions  # pyright: ignore[reportArgumentType]
 
+
+def abr_library_choices() -> list[tuple[str, str]]:
+    """Audiobookshelf libraries a request can be for; empty with one library."""
+    # local imports: this module is imported by the routers these modules use
+    from app.internal.audiobookshelf.library import library_choices
+    from app.util.db import get_session
+
+    try:
+        with next(get_session()) as session:
+            choices = library_choices(session)
+    except Exception:
+        return []
+    return choices if len(choices) > 1 else []
+
+
+templates.env.globals["abr_library_choices"] = abr_library_choices  # pyright: ignore[reportArgumentType]
+
 with open("CHANGELOG.md", "r") as file:
     changelog_content = file.read()
 templates.env.globals["changelog"] = markdown.markdown(changelog_content)  # pyright: ignore[reportArgumentType]

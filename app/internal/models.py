@@ -122,6 +122,12 @@ class AudiobookRequest(BaseSQLModel, table=True):
         foreign_key="user.username",
         ondelete="CASCADE",
     )
+    # Audiobookshelf library the book is for; None = the configured library.
+    library_id: str | None = Field(default=None)
+    # Set by the library sync when the book arrived in the configured library but
+    # belongs to `library_id`: the Audiobookshelf item to move. ABR has no write
+    # access to the files; a job on the media host moves the folder.
+    move_abs_id: str | None = Field(default=None)
     updated_at: datetime = Field(
         default_factory=datetime.now,
         sa_column=Column(

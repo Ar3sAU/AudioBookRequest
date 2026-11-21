@@ -171,6 +171,7 @@ async def _request(
     background_tasks: BackgroundTasks,
     asin: str,
     region: audible_region_type,
+    library_id: str | None = None,
 ) -> bool:
     # local import: routers import this module's callers
     from app.routers.api.requests import create_request
@@ -183,6 +184,7 @@ async def _request(
             background_task=background_tasks,
             asin_or_uuid=asin,
             region=region,
+            library_id=library_id,
         )
         return True
     except HTTPException as e:
@@ -198,6 +200,7 @@ async def request_missing(
     background_tasks: BackgroundTasks,
     series_asin: str,
     region: audible_region_type | None = None,
+    library_id: str | None = None,
 ) -> int:
     """Request every released book in the series the user neither owns nor requested."""
     region = region or get_region_from_settings()
@@ -209,7 +212,13 @@ async def request_missing(
     count = 0
     for item in view.missing:
         if await _request(
-            session, client_session, user, background_tasks, item.book.asin, region
+            session,
+            client_session,
+            user,
+            background_tasks,
+            item.book.asin,
+            region,
+            library_id,
         ):
             count += 1
     return count

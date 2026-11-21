@@ -5,7 +5,14 @@ from typing import Annotated
 
 from aiohttp import ClientSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Cookie,
+    Depends,
+    HTTPException,
+    Security,
+)
 from sqlmodel import Session
 
 from app.internal.audible.types import get_region_from_settings
@@ -122,9 +129,15 @@ async def request_all_missing(
     client_session: Annotated[ClientSession, Depends(get_connection)],
     background_tasks: BackgroundTasks,
     user: Annotated[DetailedUser, Security(ABRAuth())],
+    abr_library: Annotated[str | None, Cookie()] = None,
 ):
     count = await request_missing(
-        session, client_session, user, background_tasks, series_asin
+        session,
+        client_session,
+        user,
+        background_tasks,
+        series_asin,
+        library_id=abr_library,
     )
     if count == 0:
         raise ToastException("Nothing left to request", "info")

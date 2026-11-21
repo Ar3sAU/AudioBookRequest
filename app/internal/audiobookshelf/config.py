@@ -1,4 +1,5 @@
-from typing import Literal
+import json
+from typing import Literal, cast
 
 from sqlmodel import Session
 
@@ -14,6 +15,7 @@ ABSConfigKey = Literal[
     "abs_api_token",
     "abs_library_id",
     "abs_check_downloaded",
+    "abs_libraries",
 ]
 
 
@@ -58,6 +60,29 @@ class ABSConfig(StringConfigCache[ABSConfigKey]):
 
     def set_library_id(self, session: Session, library_id: str):
         self.set(session, "abs_library_id", library_id)
+
+    def get_libraries(self, session: Session) -> list[dict[str, str]]:
+        """Book libraries in Audiobookshelf as [{"id", "name"}], cached by the sync."""
+        raw = self.get(session, "abs_libraries")
+        try:
+            data: object = cast(object, json.loads(raw)) if raw else None
+        except ValueError:
+            return []
+        if not isinstance(data, list):
+            return []
+        libraries: list[dict[str, str]] = []
+        for entry in cast(list[object], data):
+            if not isinstance(entry, dict):
+                continue
+            d = cast(dict[str, object], entry)
+            lib_id = d.get("id")
+            if not lib_id:
+                continue
+            libraries.append({"id": str(lib_id), "name": str(d.get("name") or lib_id)})
+        return libraries
+
+    def set_libraries(self, session: Session, libraries: list[dict[str, str]]):
+        self.set(session, "abs_libraries", json.dumps(libraries))
 
     def get_check_downloaded(self, session: Session) -> bool:
         return bool(self.get_bool(session, "abs_check_downloaded") or False)

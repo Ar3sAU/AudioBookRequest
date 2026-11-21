@@ -116,16 +116,42 @@ class LibraryIndex:
     # author surname -> core titles by that author
     by_author: dict[str, set[str]] = field(default_factory=dict)
     size: int = 0
+    # per item, for find(): asin -> abs id, and (title variants, author keys, abs id)
+    ids_by_asin: dict[str, str] = field(default_factory=dict)
+    entries: list[tuple[set[str], set[str], str]] = field(default_factory=list)
 
     def add(self, item: LibraryItem) -> None:
         self.size += 1
         if item.asin:
             self.asins.add(item.asin.upper())
+            self.ids_by_asin.setdefault(item.asin.upper(), item.abs_id)
         authors = {k for a in item.authors if (k := author_key(a))}
-        for variant in title_variants(item.title, item.subtitle):
+        variants = title_variants(item.title, item.subtitle)
+        for variant in variants:
             self.by_title.setdefault(variant, set()).update(authors)
             for a in authors:
                 self.by_author.setdefault(a, set()).add(variant)
+        self.entries.append((variants, authors, item.abs_id))
+
+    def find(self, book: Audiobook) -> str | None:
+        """The Audiobookshelf item id that owns() matched, by the same rules."""
+        if not self.size:
+            return None
+        if book.asin and (found := self.ids_by_asin.get(book.asin.upper())):
+            return found
+        variants = title_variants(book.title, book.subtitle)
+        authors = {k for a in book.authors if (k := author_key(a))}
+        for item_variants, item_authors, abs_id in self.entries:
+            if variants & item_variants and (
+                not authors or not item_authors or item_authors & authors
+            ):
+                return abs_id
+        for item_variants, item_authors, abs_id in self.entries:
+            if item_authors & authors and any(
+                _fuzzy_same(v, c) for v in variants for c in item_variants
+            ):
+                return abs_id
+        return None
 
     def owns(self, book: Audiobook) -> bool:
         if not self.size:
@@ -197,6 +223,83 @@ def mark_owned(session: Session, books: list[Audiobook]) -> list[Audiobook]:
             book.fulfilled = True
             owned.append(book)
     return owned
+
+
+# ---------------------------------------------------------------------------
+# Libraries a request can be for
+# ---------------------------------------------------------------------------
+
+
+def library_choices(session: Session) -> list[tuple[str, str]]:
+    """(id, name) of the book libraries, the configured one first."""
+    default = abs_config.get_library_id(session)
+    if not default:
+        return []
+    libraries = abs_config.get_libraries(session)
+    names = {lib["id"]: lib["name"] for lib in libraries}
+    choices = [(default, names.get(default, "Default"))]
+    choices += [(lib["id"], lib["name"]) for lib in libraries if lib["id"] != default]
+    return choices
+
+
+def resolve_request_library(session: Session, library_id: str | None) -> str | None:
+    """A request's library: None for the configured one or anything unknown."""
+    if not library_id or library_id == abs_config.get_library_id(session):
+        return None
+    if library_id in {lib_id for lib_id, _ in library_choices(session)}:
+        return library_id
+    return None
+
+
+def update_library_moves(session: Session) -> int:
+    """Flag requests whose book arrived in the configured library but is for another.
+
+    Sets `move_abs_id` to the matching item, or clears it once the item is gone
+    (moved). Returns how many requests are flagged.
+    """
+    index = get_library_index(session)
+    flagged = 0
+    for req in session.exec(
+        select(AudiobookRequest).where(col(AudiobookRequest.library_id).is_not(None))
+    ).all():
+        abs_id = index.find(req.audiobook) if req.audiobook else None
+        if req.move_abs_id != abs_id:
+            req.move_abs_id = abs_id
+            session.add(req)
+        if abs_id:
+            flagged += 1
+    session.commit()
+    return flagged
+
+
+class _MinLibrary(BaseModel):
+    id: str
+    name: str | None = None
+    mediaType: str = "book"
+
+
+class _LibrariesPage(BaseModel):
+    libraries: list[_MinLibrary] = []
+
+
+async def _fetch_libraries(
+    session: Session, client_session: ClientSession, base_url: str
+) -> list[dict[str, str]]:
+    token = abs_config.get_api_token(session)
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT}
+    async with client_session.get(
+        posixpath.join(base_url, "api/libraries"), headers=headers
+    ) as resp:
+        if not resp.ok:
+            raise LibrarySyncError(
+                f"Audiobookshelf returned {resp.status} listing libraries"
+            )
+        data = _LibrariesPage.model_validate(await resp.json())
+    return [
+        {"id": lib.id, "name": lib.name or lib.id}
+        for lib in data.libraries
+        if lib.mediaType == "book"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +412,12 @@ async def sync_library(session: Session, client_session: ClientSession) -> SyncR
         raise LibrarySyncError("Audiobookshelf is not fully configured")
 
     fetched = await _fetch_all_items(session, client_session, base_url, library_id)
+    try:
+        abs_config.set_libraries(
+            session, await _fetch_libraries(session, client_session, base_url)
+        )
+    except Exception as e:  # the library list is a convenience; never fail the sync
+        logger.warning("ABS: could not list libraries", error=str(e))
     now = datetime.now(UTC)
     incoming = {
         li.abs_id: li
@@ -371,6 +480,7 @@ async def sync_library(session: Session, client_session: ClientSession) -> SyncR
             book.fulfilled = False
             result.unflagged += 1
     session.commit()
+    to_move = update_library_moves(session)
 
     logger.info(
         "ABS: library sync complete",
@@ -379,6 +489,7 @@ async def sync_library(session: Session, client_session: ClientSession) -> SyncR
         removed=result.removed,
         newly_owned=result.newly_owned,
         unflagged=result.unflagged,
+        to_move=to_move,
     )
     return result
 

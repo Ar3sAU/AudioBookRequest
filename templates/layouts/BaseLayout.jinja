@@ -111,7 +111,25 @@
                             </span>
                         </a>
                     </div>
-                    <div class="flex-none flex pr-4">
+                    <div class="flex-none flex pr-4 items-center">
+                        {% if abr_library_choices() %}
+                            <label class="flex items-center gap-1 mr-2"
+                                   title="Requests go to this Audiobookshelf library">
+                                <span class="text-sm opacity-70 hidden sm:inline">For</span>
+                                <select id="abr-library"
+                                        class="select select-sm select-ghost w-auto"
+                                        onchange="document.cookie = 'abr_library=' + encodeURIComponent(this.value) + '; path=/; max-age=31536000; samesite=lax'">
+                                    {% for lib_id, lib_name in abr_library_choices() %}<option value="{{ lib_id }}">{{ lib_name }}</option>{% endfor %}
+                                </select>
+                            </label>
+                            <script>
+                                (function() {
+                                    const m = document.cookie.match(/(?:^|; )abr_library=([^;]*)/);
+                                    const s = document.getElementById("abr-library");
+                                    if (m && s && [...s.options].some(o => o.value === decodeURIComponent(m[1]))) s.value = decodeURIComponent(m[1]);
+                                })();
+                            </script>
+                        {% endif %}
                         <button class="btn btn-ghost btn-square light-dark-toggle"
                                 onclick="toggleTheme()">
                             <script>
